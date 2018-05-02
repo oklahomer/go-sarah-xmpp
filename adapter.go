@@ -27,12 +27,18 @@ type AdapterOption func(adapter *Adapter) error
 type Adapter struct {
 	config         *Config
 	client         *xmpp.Client
-	payloadHandler func(context.Context, *Config, DecodedPayload, func(sarah.Input) error)
+	payloadHandler EventHandler
 }
 
-func xmppPayloadHandler(fnc func(context.Context, *Config, DecodedPayload, func(sarah.Input) error)) AdapterOption {
+type EventHandler func(ctx context.Context, config *Config, input sarah.Input, enqueueInput func(sarah.Input) error)
+
+func defaultEventHandler(ctx context.Context, config *Config, payload sarah.Input, enqueueInput func(input sarah.Input) error) {
+	enqueueInput(payload)
+}
+
+func WithEventHandler(handler EventHandler) AdapterOption {
 	return func(adapter *Adapter) error {
-		adapter.payloadHandler = fnc
+		adapter.payloadHandler = handler
 		return nil
 	}
 }
@@ -42,7 +48,7 @@ func NewAdapter(config *Config, options ...AdapterOption) (*Adapter, error) {
 	var err error
 	adapter := &Adapter{
 		config:         config,
-		payloadHandler: xmppPayloadHandler,
+		payloadHandler: defaultEventHandler,
 	}
 
 	for _, opt := range options {
