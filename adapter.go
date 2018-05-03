@@ -10,6 +10,7 @@ import (
 	"github.com/oklahomer/go-sarah/log"
 
 	"fmt"
+	"github.com/oklahomer/go-sarah/retry"
 	"golang.org/x/net/context"
 )
 
@@ -106,6 +107,8 @@ func (adapter *Adapter) Run(ctx context.Context, enqueueInput func(sarah.Input) 
 	for {
 		client, err := connect(adapter.config)
 		if err != nil {
+			// Failed to connect with configured retrial settings.
+			// Notify non-continuable situation to sarah.Runner and let this adapter stop.
 			notifyErr(sarah.NewBotNonContinuableError(err.Error()))
 		}
 
@@ -160,7 +163,16 @@ func connect(config *Config) (*xmpp.Client, error) {
 		OAuthXmlNs:                   config.OAuthXmlNs,
 	}
 
-	return options.NewClient()
+	var client *xmpp.Client
+	err := retry.WithInterval(config.RetryLimit, func() (e error) {
+		client, e = options.NewClient()
+		return e
+	}, config.RetryInterval)
+	if err != nil {
+		return nil, err
+	}
+
+	return client, nil
 }
 
 type stanzaReceiver interface {

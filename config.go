@@ -8,6 +8,8 @@ type Config struct {
 	AbortCommand     string        `json:"abort_command" yaml:"abort_command"`
 	PingInterval     time.Duration `json:"ping_interval" yaml:"ping_interval"`
 	SendingQueueSize uint          `json:"sending_queue_size" yaml:"sending_queue_size"`
+	RetryLimit       uint          `json:"retry_limit" yaml:"retry_limit"`
+	RetryInterval    time.Duration `json:"retry_interval" yaml:"retry_interval"`
 
 	Server                       string `json:"server" yaml:"server"`
 	Password                     string `json:"password" yaml:"password"`
@@ -35,6 +37,8 @@ func NewConfig() *Config {
 		AbortCommand:     ".abort",
 		PingInterval:     30 * time.Second,
 		SendingQueueSize: 100,
+		RetryLimit:       10,
+		RetryInterval:    500 * time.Millisecond,
 
 		Server:                       "",
 		Password:                     "",
