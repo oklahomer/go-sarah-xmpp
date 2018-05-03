@@ -80,8 +80,8 @@ func NewAdapter(config *Config, options ...AdapterOption) (*Adapter, error) {
 	var err error
 	adapter := &Adapter{
 		config:        config,
-		stanzaHandler: defaultStanzaHandler,
-		messageQueue:  make(chan xmpp.Chat, 100), // TODO customizable queue size
+		stanzaHandler: defaultStanzaHandler, // Can be overridden by AdapterOption
+		messageQueue:  make(chan xmpp.Chat, config.SendingQueueSize),
 	}
 
 	for _, opt := range options {

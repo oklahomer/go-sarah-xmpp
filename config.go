@@ -4,9 +4,10 @@ import "time"
 
 // Config contains some configuration variables for xmpp Adapter.
 type Config struct {
-	HelpCommand  string        `json:"help_command" yaml:"help_command"`
-	AbortCommand string        `json:"abort_command" yaml:"abort_command"`
-	PingInterval time.Duration `json:"ping_interval" yaml:"ping_interval"`
+	HelpCommand      string        `json:"help_command" yaml:"help_command"`
+	AbortCommand     string        `json:"abort_command" yaml:"abort_command"`
+	PingInterval     time.Duration `json:"ping_interval" yaml:"ping_interval"`
+	SendingQueueSize uint          `json:"sending_queue_size" yaml:"sending_queue_size"`
 
 	Server                       string `json:"server" yaml:"server"`
 	Password                     string `json:"password" yaml:"password"`
@@ -30,9 +31,10 @@ type Config struct {
 // Developers may override desired value by passing this to json.Unmarshal, yaml.Unmarshal or manual manipulation.
 func NewConfig() *Config {
 	return &Config{
-		HelpCommand:  ".help",
-		AbortCommand: ".abort",
-		PingInterval: 30 * time.Second,
+		HelpCommand:      ".help",
+		AbortCommand:     ".abort",
+		PingInterval:     30 * time.Second,
+		SendingQueueSize: 100,
 
 		Server:                       "",
 		Password:                     "",
