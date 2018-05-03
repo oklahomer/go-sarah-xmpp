@@ -1,6 +1,6 @@
 This is a [sarah](https://github.com/oklahomer/go-sarah) ```Adapter``` implementation for XMPP / Jabber
 
-At present this is work in progress and does not even compile. We hope to have it working soon. 
+At present this is work in progress, and API may change without notice.
 
 # Getting Started
 Below is a minimal sample that describes how to setup and start XMPP Adapter.
@@ -20,13 +20,13 @@ import (
 func main() {
         // Setup configuration
         configBuf, _ := ioutil.ReadFile("/path/to/adapter/config.yaml")
-        lineConfig := xmpp.NewConfig()
-        yaml.Unmarshal(configBuf, lineConfig)
+        xmppConfig := xmpp.NewConfig()
+        yaml.Unmarshal(configBuf, xmppConfig)
 
         // Setup bot
-        xmppAdapter, _ := xmpp.NewAdapter(lineConfig)
+        xmppAdapter, _ := xmpp.NewAdapter(xmppConfig)
         storage := sarah.NewUserContextStorage(sarah.NewCacheConfig())
-        xmppBot, _ := sarah.NewBot(xmppadapter, sarah.BotWithStorage(storage))
+        xmppBot, _ := sarah.NewBot(xmppAdapter, sarah.BotWithStorage(storage))
 	
         // Start
         rootCtx := context.Background()
@@ -38,5 +38,3 @@ func main() {
 
 ## Acknowledgements and thanks
 This library uses the excellent xmpp library - https://github.com/mattn/go-xmpp
-
-We have also relied on code snippets from https://github.com/42wim/matterbridge - Copyright 2017 42wim -  Licensed under Apache License 2.0
