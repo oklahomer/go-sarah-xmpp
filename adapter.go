@@ -99,10 +99,10 @@ func (adapter *Adapter) BotType() sarah.BotType {
 	return XMPP
 }
 
-// Set up and watch the xmpp connection
+// Set up and watch the XMPP connection
 func (adapter *Adapter) Run(ctx context.Context, enqueueInput func(sarah.Input) error, notifyErr func(error)) {
 	for {
-		client, err := adapter.createXMPP()
+		client, err := connect(adapter.config)
 		if err != nil {
 			notifyErr(sarah.NewBotNonContinuableError(err.Error()))
 		}
@@ -136,23 +136,26 @@ func (adapter *Adapter) Run(ctx context.Context, enqueueInput func(sarah.Input) 
 	}
 }
 
-func (adapter *Adapter) createXMPP() (*xmpp.Client, error) {
+func connect(config *Config) (*xmpp.Client, error) {
 	tc := new(tls.Config)
-	tc.InsecureSkipVerify = adapter.config.SkipTLSVerify
-	tc.ServerName = strings.Split(adapter.config.Server, ":")[0]
+	tc.InsecureSkipVerify = config.SkipTLSVerify
+	tc.ServerName = strings.Split(config.Server, ":")[0]
 	options := xmpp.Options{
-		Host:                         adapter.config.Server,
-		User:                         adapter.config.Jid,
-		Password:                     adapter.config.Password,
-		NoTLS:                        true,
-		StartTLS:                     true,
+		Host:                         config.Server,
+		User:                         config.Jid,
+		Password:                     config.Password,
+		NoTLS:                        config.NoTLS,
+		StartTLS:                     config.StartTLS,
 		TLSConfig:                    tc,
-		Debug:                        adapter.config.Debug,
-		Session:                      true,
-		Status:                       "",
-		StatusMessage:                "",
-		Resource:                     "",
-		InsecureAllowUnencryptedAuth: false,
+		Debug:                        config.Debug,
+		Session:                      config.Session,
+		Status:                       config.Status,
+		StatusMessage:                config.StatusMessage,
+		Resource:                     config.Resource,
+		InsecureAllowUnencryptedAuth: config.InsecureAllowUnencryptedAuth,
+		OAuthScope:                   config.OAuthScope,
+		OAuthToken:                   config.OAuthToken,
+		OAuthXmlNs:                   config.OAuthXmlNs,
 	}
 
 	return options.NewClient()
