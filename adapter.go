@@ -163,6 +163,10 @@ func connect(config *Config) (*xmpp.Client, error) {
 	return options.NewClient()
 }
 
+type stanzaReceiver interface {
+	Recv() (interface{}, error)
+}
+
 // Listens to current XMPP connection and receive incoming XMPP stanzas.
 // On successful stanza reception, this passes received stanza to StanzaHandler.
 // Developer may override default StanzaHandler by passing StanzaHandler implementation to NewAdapter() as below:
@@ -172,9 +176,7 @@ func connect(config *Config) (*xmpp.Client, error) {
 //	}
 //	opt := WithStanzaHandler(myHandler)
 //	adapter, err := NewAdapter(config, opt)
-//
-// TODO Instead of receiving *xmpp.Client, let this method receive an interface that has Recv() method for easier unit testing
-func (adapter *Adapter) receiveStanza(ctx context.Context, client *xmpp.Client, tryPing chan<- struct{}, enqueueInput func(sarah.Input) error) {
+func (adapter *Adapter) receiveStanza(ctx context.Context, client stanzaReceiver, tryPing chan<- struct{}, enqueueInput func(sarah.Input) error) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -204,12 +206,17 @@ func (adapter *Adapter) receiveStanza(ctx context.Context, client *xmpp.Client, 
 	}
 }
 
+type stanzaSender interface {
+	Send(chat xmpp.Chat) (int, error)
+	PingC2S(string, string) error
+}
+
 // superviseConnection is responsible for connection life cycle.
 // This blocks till connection is closed.
 //
 // When connection is unintentionally closed, this returns an error to let caller handle the error and reconnect;
 // when context is intentionally canceled, this returns nil so the caller can proceed to exit.
-func (adapter *Adapter) superviseConnection(ctx context.Context, client *xmpp.Client, tryPing chan struct{}) error {
+func (adapter *Adapter) superviseConnection(ctx context.Context, client stanzaSender, tryPing chan struct{}) error {
 	ticker := time.NewTicker(adapter.config.PingInterval)
 	defer ticker.Stop()
 
