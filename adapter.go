@@ -30,9 +30,11 @@ type Adapter struct {
 	messageQueue  chan xmpp.Chat
 }
 
-type StanzaHandler func(ctx context.Context, config *Config, stanza DecodedPayload, enqueueInput func(sarah.Input) error)
+type Stanza interface{}
 
-func defaultStanzaHandler(_ context.Context, config *Config, stanza DecodedPayload, enqueueInput func(input sarah.Input) error) {
+type StanzaHandler func(ctx context.Context, config *Config, stanza Stanza, enqueueInput func(sarah.Input) error)
+
+func defaultStanzaHandler(_ context.Context, config *Config, stanza Stanza, enqueueInput func(input sarah.Input) error) {
 	switch typedStanza := stanza.(type) {
 	case xmpp.Chat:
 		if parseNick(typedStanza.Remote) == parseNick(config.Jid) {
@@ -256,14 +258,6 @@ func parseNick(jid string) string {
 		if len(s) == 2 {
 			return s[1] // nick
 		}
-	}
-	return ""
-}
-
-func (adapter *Adapter) parseChannel(remote string) string {
-	s := strings.Split(remote, "@")
-	if len(s) >= 2 {
-		return s[0] // channel
 	}
 	return ""
 }
