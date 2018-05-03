@@ -231,26 +231,14 @@ func (adapter *Adapter) parseChannel(remote string) string {
 // SendMessage let Bot send message to Xmpp
 func (adapter *Adapter) SendMessage(ctx context.Context, output sarah.Output) {
 	switch content := output.Content().(type) {
-	case string:
+	case xmpp.Chat:
 
-		message := xmpp.Chat{
-			Remote: output.Destination().(string),
-			Text:   content,
-			//Thread: ctx.Value().(string),
-		}
-
-		if _, err := adapter.client.Send(message); err != nil {
+		if _, err := adapter.client.Send(content); err != nil {
 			log.Error("something went wrong with xmpp send stanza", err)
 		}
 
 	case *sarah.CommandHelps:
-		/*
-		messages := []linebot.Message{}
-		for _, commandHelp := range *content {
-			messages = append(messages, linebot.NewTextMessage(commandHelp.InputExample))
-		}
-		adapter.client.Send(message)
-		*/
+		// TODO
 
 	default:
 		log.Warnf("unexpected output %#v", output)
@@ -258,28 +246,45 @@ func (adapter *Adapter) SendMessage(ctx context.Context, output sarah.Output) {
 	}
 }
 
-
 // NewStringResponse creates new sarah.CommandResponse instance with given string.
-func NewStringResponse(responseContent string) *sarah.CommandResponse {
+// This is a handy helper to setup outgoing xmpp.Chat value.
+// To have more customized value, developers are encouraged to construct xmpp.Chat directly.
+func NewStringResponse(input sarah.Input, message string) *sarah.CommandResponse {
+	xmppInput, _ := input.(*MessageInput)
 	return &sarah.CommandResponse{
-		Content:     responseContent,
-		UserContext: nil,
+		Content: xmpp.Chat{
+			Remote: xmppInput.ReplyTo().(string),
+			Text:   message,
+			// https://tools.ietf.org/html/rfc3921#section-2.1.1
+			// Although the 'type' attribute is OPTIONAL, it is considered polite to
+			// mirror the type in any replies to a message; furthermore, some
+			// specialized applications (e.g., a multi-user chat service) MAY at
+			// their discretion enforce the use of a particular message type (e.g.,
+			// type='groupchat').
+			Type: xmppInput.Event.Type,
+		},
 	}
 }
 
-// NewStringResponseWithNext creates new sarah.CommandResponse instance with given
-// string and next function to continue
+// NewStringResponseWithNext creates a new sarah.CommandResponse instance with given string and next function to continue.
+// With this method, user context is directly stored as an anonymous function
+// since XMPP Bot works with single connection and hence usually works with single process.
 //
-// With this method user context is directly stored as an anonymous function since
-// Slack Bot works with single WebSocket connection and hence usually works with
-// single process.
-//
-// To use external storage to store user context, use go-sarah-rediscontext or
-// similar sarah.UserContextStorage implementation.
-func NewStringResponseWithNext(responseContent string, next sarah.ContextualFunc) *sarah.CommandResponse {
+// To use external storage to store user context, use go-sarah-rediscontext or similar sarah.UserContextStorage implementation.
+func NewStringResponseWithNext(input sarah.Input, message string, next sarah.ContextualFunc) *sarah.CommandResponse {
+	xmppInput, _ := input.(*MessageInput)
 	return &sarah.CommandResponse{
-		Content:     responseContent,
+		Content: xmpp.Chat{
+			Remote: xmppInput.ReplyTo().(string),
+			Text:   message,
+			// https://tools.ietf.org/html/rfc3921#section-2.1.1
+			// Although the 'type' attribute is OPTIONAL, it is considered polite to
+			// mirror the type in any replies to a message; furthermore, some
+			// specialized applications (e.g., a multi-user chat service) MAY at
+			// their discretion enforce the use of a particular message type (e.g.,
+			// type='groupchat').
+			Type: xmppInput.Event.Type,
+		},
 		UserContext: sarah.NewUserContext(next),
 	}
 }
-
