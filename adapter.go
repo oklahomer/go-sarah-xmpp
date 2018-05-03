@@ -132,19 +132,24 @@ func (adapter *Adapter) handleXMPP(enqueueInput func(sarah.Input) error, notifyE
 	done := adapter.xmppKeepAlive()
 	defer close(done)
 	for {
-		m, err := adapter.client.Recv()
+		stanza, err := adapter.client.Recv()
 		if err != nil {
 			return err
 		}
-		switch v := m.(type) {
+		switch typedStanza := stanza.(type) {
 		case xmpp.Chat:
-			if adapter.skipMessage(v) {
+			if adapter.parseNick(typedStanza.Remote) == adapter.parseNick(adapter.config.Jid) {
+				// Skip message from this bot.
 				continue
 			}
 
-			// TODO consider handling MUC and chat differently??
+			if !typedStanza.Stamp.IsZero() {
+				// Skip delayed messages.
+				// https://xmpp.org/extensions/xep-0203.html
+				continue
+			}
 
-			input := NewMessageInput(&v, time.Now())
+			input := NewMessageInput(&typedStanza, time.Now())
 
 			trimmed := strings.TrimSpace(input.Message())
 			if adapter.config.HelpCommand != "" && trimmed == adapter.config.HelpCommand {
@@ -188,29 +193,8 @@ func (adapter *Adapter) xmppKeepAlive() chan bool {
 	return done
 }
 
-// skipMessage skips messages that need to be skipped
-func (adapter *Adapter) skipMessage(message xmpp.Chat) bool {
-	// Skip messages to ourselves
-	if adapter.parseNick(message.Remote) == adapter.parseNick(adapter.config.Jid) {
-		return true
-	}
-
-	// skip empty messages
-	if message.Text == "" {
-		return true
-	}
-
-	// skip subject messages
-	if strings.Contains(message.Text, "</subject>") {
-		return true
-	}
-
-	// skip delayed messages
-	return !message.Stamp.IsZero()
-}
-
-func (adapter *Adapter) parseNick(remote string) string {
-	s := strings.Split(remote, "@")
+func (adapter *Adapter) parseNick(jid string) string {
+	s := strings.Split(jid, "@")
 	if len(s) > 0 {
 		s = strings.Split(s[1], "/")
 		if len(s) == 2 {
