@@ -2,44 +2,61 @@ package xmpp
 
 import (
 	"fmt"
-	"time"
-
 	"github.com/mattn/go-xmpp"
 	"github.com/oklahomer/go-sarah"
+	"time"
 )
 
-// NewMessageInput creates and returns MessageInput instance.
-func NewMessageInput(message xmpp.Chat) *MessageInput {
+// NewMessageInput creates and returns MessageInput instance that represents incoming chat message.
+func NewMessageInput(message *xmpp.Chat, receivedAt time.Time) *MessageInput {
+	// Since XMPP is a real-time based protocol, sending timestamp is not part of the core spec.
+	// However, with XEP-0203, a timestamp can be set for delayed message.
+	// https://xmpp.org/extensions/xep-0203.html
+	//
+	// To satisfy sarah.Input interface, this adapter uses message reception time as message sending time
+	// when no timestamp is available.
+	t := message.Stamp
+	if t.IsZero() {
+		t = receivedAt
+	}
 	return &MessageInput{
-		event: &message,
+		Event:     message,
+		timestamp: t,
 	}
 }
 
-// MessageInput satisfies Input interface for an xmpp.Chat message
+// MessageInput represents sarah.Input implementation that represents incoming chat message.
+// Developers may directly refer to its field, Event, to access additional detailed data.
 type MessageInput struct {
-	event *xmpp.Chat
+	Event     *xmpp.Chat
+	timestamp time.Time
 }
 
-// SenderKey returns string representing message sender.
+var _ sarah.Input = (*MessageInput)(nil)
+
+// SenderKey returns a text representing the message sender.
+// Returned value is equivalent to the JID specified in "from" attribute.
+// https://tools.ietf.org/html/rfc3920#section-9.1.2
 func (message *MessageInput) SenderKey() string {
-	// not sure this is right - for slack the first param is channelID
-	// I would have thought room name
-	return fmt.Sprintf("%s|%s", message.SenderKey(), message.event.Remote)
+	return fmt.Sprintf("%s", message.Event.Remote)
 }
 
-// Message returns body message.
+// Message returns message content.
 func (message *MessageInput) Message() string {
-	return message.event.Text
+	return message.Event.Text
 }
 
-// SentAt returns message event's timestamp.
+// SentAt returns the timestamp when the message is sent.
+// Since XMPP is a real-time based protocol, sending timestamp is not part of the core spec.
+// This returns delayed timestamp derived from XEP-0203 when possible; otherwise returns the reception time.
 func (message *MessageInput) SentAt() time.Time {
-	return message.event.Stamp
+	return message.timestamp
 }
 
-// ReplyTo returns slack channel to send reply to.
-// TODO - maybe for groupchat we need to set this to message.Replyto ??
-// or does remote contain room name (check)
+// ReplyTo returns replying destination.
+// Currently its value is a plain text representing JID of the sender.
+// This may be a "full JID" that contains "/resource" part when the message type is "groupchat."
+// https://xmpp.org/extensions/xep-0045.html#terms
 func (message *MessageInput) ReplyTo() sarah.OutputDestination {
-	return message.event.Remote
+	return message.Event.Remote
 }

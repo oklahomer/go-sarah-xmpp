@@ -144,7 +144,7 @@ func (adapter *Adapter) handleXMPP(enqueueInput func(sarah.Input) error, notifyE
 
 			// TODO consider handling MUC and chat differently??
 
-			input := NewMessageInput(v)
+			input := NewMessageInput(&v, time.Now())
 
 			trimmed := strings.TrimSpace(input.Message())
 			if adapter.config.HelpCommand != "" && trimmed == adapter.config.HelpCommand {
@@ -206,8 +206,7 @@ func (adapter *Adapter) skipMessage(message xmpp.Chat) bool {
 	}
 
 	// skip delayed messages
-	t := time.Time{}
-	return message.Stamp != t
+	return !message.Stamp.IsZero()
 }
 
 func (adapter *Adapter) parseNick(remote string) string {
