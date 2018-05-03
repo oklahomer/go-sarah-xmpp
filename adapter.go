@@ -25,20 +25,52 @@ type AdapterOption func(adapter *Adapter) error
 // This implements sarah.Adapter interface, so this instance can be fed
 // to sarah.Runner as below.
 type Adapter struct {
-	config         *Config
-	payloadHandler EventHandler
-	messageQueue   chan xmpp.Chat
+	config        *Config
+	stanzaHandler StanzaHandler
+	messageQueue  chan xmpp.Chat
 }
 
-type EventHandler func(ctx context.Context, config *Config, input sarah.Input, enqueueInput func(sarah.Input) error)
+type StanzaHandler func(ctx context.Context, config *Config, stanza DecodedPayload, enqueueInput func(sarah.Input) error)
 
-func defaultEventHandler(ctx context.Context, config *Config, payload sarah.Input, enqueueInput func(input sarah.Input) error) {
-	enqueueInput(payload)
+func defaultStanzaHandler(_ context.Context, config *Config, stanza DecodedPayload, enqueueInput func(input sarah.Input) error) {
+	switch typedStanza := stanza.(type) {
+	case xmpp.Chat:
+		if parseNick(typedStanza.Remote) == parseNick(config.Jid) {
+			// Skip message from this bot.
+			return
+		}
+
+		if !typedStanza.Stamp.IsZero() {
+			// Skip delayed messages.
+			// https://xmpp.org/extensions/xep-0203.html
+			return
+		}
+
+		input := NewMessageInput(&typedStanza, time.Now())
+
+		trimmed := strings.TrimSpace(input.Message())
+		if config.HelpCommand != "" && trimmed == config.HelpCommand {
+			// Help command
+			help := sarah.NewHelpInput(input.SenderKey(), input.Message(), input.SentAt(), input.ReplyTo())
+			enqueueInput(help)
+		} else if config.AbortCommand != "" && trimmed == config.AbortCommand {
+			// Abort command
+			abort := sarah.NewAbortInput(input.SenderKey(), input.Message(), input.SentAt(), input.ReplyTo())
+			enqueueInput(abort)
+		} else {
+			// Regular input
+			enqueueInput(input)
+		}
+
+	case xmpp.Presence:
+		// do nothing
+
+	}
 }
 
-func WithEventHandler(handler EventHandler) AdapterOption {
+func WithStanzaHandler(handler StanzaHandler) AdapterOption {
 	return func(adapter *Adapter) error {
-		adapter.payloadHandler = handler
+		adapter.stanzaHandler = handler
 		return nil
 	}
 }
@@ -47,9 +79,9 @@ func WithEventHandler(handler EventHandler) AdapterOption {
 func NewAdapter(config *Config, options ...AdapterOption) (*Adapter, error) {
 	var err error
 	adapter := &Adapter{
-		config:         config,
-		payloadHandler: defaultEventHandler,
-		messageQueue:   make(chan xmpp.Chat, 100), // TODO customizable queue size
+		config:        config,
+		stanzaHandler: defaultStanzaHandler,
+		messageQueue:  make(chan xmpp.Chat, 100), // TODO customizable queue size
 	}
 
 	for _, opt := range options {
@@ -86,10 +118,10 @@ func (adapter *Adapter) Run(ctx context.Context, enqueueInput func(sarah.Input) 
 		// Closing the channel is a control signal on the channel indicating that no more data follows."
 		tryPing := make(chan struct{}, 1)
 
-		go adapter.handleXMPP(connCtx, client, tryPing, enqueueInput)
+		go adapter.receiveStanza(connCtx, client, tryPing, enqueueInput)
 
-		connErr := adapter.xmppKeepAlive(connCtx, client, tryPing)
-		// xmppKeepAlive returns when parent context is canceled or connection is hopelessly unstable.
+		connErr := adapter.superviseConnection(connCtx, client, tryPing)
+		// superviseConnection returns when parent context is canceled or connection is hopelessly unstable.
 		// Close current connection and do some cleanup.
 		client.Close() // Make sure to close the connection.
 		connCancel()   // Cancel all ongoing tasks for current connection to avoid goroutine leaks.
@@ -126,10 +158,18 @@ func (adapter *Adapter) createXMPP() (*xmpp.Client, error) {
 	return options.NewClient()
 }
 
-// Listens for and handles incoming XMPP messages
-// Push incoming messages to sarah via enqueueInput
-// Notify sarah of errors on notifyErr
-func (adapter *Adapter) handleXMPP(ctx context.Context, client *xmpp.Client, tryPing chan<- struct{}, enqueueInput func(sarah.Input) error) {
+// Listens to current XMPP connection and receive incoming XMPP stanzas.
+// On successful stanza reception, this passes received stanza to StanzaHandler.
+// Developer may override default StanzaHandler by passing StanzaHandler implementation to NewAdapter() as below:
+//
+// 	myHandler := func(ctx context.Context, config *Config, stanza DecodedPayload, enqueueInput func(sarah.Input) error) {
+//		// Do something
+//	}
+//	opt := WithStanzaHandler(myHandler)
+//	adapter, err := NewAdapter(config, opt)
+//
+// TODO Instead of receiving *xmpp.Client, let this method receive an interface that has Recv() method for easier unit testing
+func (adapter *Adapter) receiveStanza(ctx context.Context, client *xmpp.Client, tryPing chan<- struct{}, enqueueInput func(sarah.Input) error) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -139,56 +179,32 @@ func (adapter *Adapter) handleXMPP(ctx context.Context, client *xmpp.Client, try
 		default:
 			stanza, err := client.Recv()
 			if err != nil {
+				// Failed to receive stanza. Try ping to check connection status.
 				select {
 				case tryPing <- struct{}{}:
 					// O.K
+					continue
 
 				default:
 					// couldn't send because no goroutine is receiving channel or is busy.
 					log.Infof("Not sending ping signal because another goroutine already sent one and is being processed."+
 						"The cause at this moment: %s", err.Error())
+					continue
 
 				}
 			}
 
-			switch typedStanza := stanza.(type) {
-			case xmpp.Chat:
-				if adapter.parseNick(typedStanza.Remote) == adapter.parseNick(adapter.config.Jid) {
-					// Skip message from this bot.
-					continue
-				}
-
-				if !typedStanza.Stamp.IsZero() {
-					// Skip delayed messages.
-					// https://xmpp.org/extensions/xep-0203.html
-					continue
-				}
-
-				input := NewMessageInput(&typedStanza, time.Now())
-
-				trimmed := strings.TrimSpace(input.Message())
-				if adapter.config.HelpCommand != "" && trimmed == adapter.config.HelpCommand {
-					// Help command
-					help := sarah.NewHelpInput(input.SenderKey(), input.Message(), input.SentAt(), input.ReplyTo())
-					enqueueInput(help)
-				} else if adapter.config.AbortCommand != "" && trimmed == adapter.config.AbortCommand {
-					// Abort command
-					abort := sarah.NewAbortInput(input.SenderKey(), input.Message(), input.SentAt(), input.ReplyTo())
-					enqueueInput(abort)
-				} else {
-					// Regular input
-					enqueueInput(input)
-				}
-
-			case xmpp.Presence:
-				// do nothing
-
-			}
+			adapter.stanzaHandler(ctx, adapter.config, stanza, enqueueInput)
 		}
 	}
 }
 
-func (adapter *Adapter) xmppKeepAlive(ctx context.Context, client *xmpp.Client, tryPing chan struct{}) error {
+// superviseConnection is responsible for connection life cycle.
+// This blocks till connection is closed.
+//
+// When connection is unintentionally closed, this returns an error to let caller handle the error and reconnect;
+// when context is intentionally canceled, this returns nil so the caller can proceed to exit.
+func (adapter *Adapter) superviseConnection(ctx context.Context, client *xmpp.Client, tryPing chan struct{}) error {
 	ticker := time.NewTicker(adapter.config.PingInterval)
 	defer ticker.Stop()
 
@@ -230,7 +246,7 @@ func (adapter *Adapter) xmppKeepAlive(ctx context.Context, client *xmpp.Client, 
 	}
 }
 
-func (adapter *Adapter) parseNick(jid string) string {
+func parseNick(jid string) string {
 	s := strings.Split(jid, "@")
 	if len(s) > 0 {
 		s = strings.Split(s[1], "/")
