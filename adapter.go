@@ -305,6 +305,7 @@ func NewStringResponse(input sarah.Input, message string) *sarah.CommandResponse
 		Content: xmpp.Chat{
 			Remote: xmppInput.ReplyTo().(string),
 			Text:   message,
+
 			// https://tools.ietf.org/html/rfc3921#section-2.1.1
 			// Although the 'type' attribute is OPTIONAL, it is considered polite to
 			// mirror the type in any replies to a message; furthermore, some
@@ -312,6 +313,10 @@ func NewStringResponse(input sarah.Input, message string) *sarah.CommandResponse
 			// their discretion enforce the use of a particular message type (e.g.,
 			// type='groupchat').
 			Type: xmppInput.Event.Type,
+
+			// Inherit the given thread identifier by default to indicate that this response is part of the thread.
+			// Developer may ignore the value or use different thread identifier by constructing sarah.CommandResponse manually.
+			Thread: xmppInput.Event.Thread,
 		},
 	}
 }
@@ -327,6 +332,7 @@ func NewStringResponseWithNext(input sarah.Input, message string, next sarah.Con
 		Content: xmpp.Chat{
 			Remote: xmppInput.ReplyTo().(string),
 			Text:   message,
+
 			// https://tools.ietf.org/html/rfc3921#section-2.1.1
 			// Although the 'type' attribute is OPTIONAL, it is considered polite to
 			// mirror the type in any replies to a message; furthermore, some
@@ -334,6 +340,10 @@ func NewStringResponseWithNext(input sarah.Input, message string, next sarah.Con
 			// their discretion enforce the use of a particular message type (e.g.,
 			// type='groupchat').
 			Type: xmppInput.Event.Type,
+
+			// Inherit the given thread identifier by default to indicate that this response is part of the thread.
+			// Developer may ignore the value or use different thread identifier by constructing sarah.CommandResponse manually.
+			Thread: xmppInput.Event.Thread,
 		},
 		UserContext: sarah.NewUserContext(next),
 	}
