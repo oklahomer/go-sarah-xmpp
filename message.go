@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/mattn/go-xmpp"
 	"github.com/oklahomer/go-sarah"
+	"strings"
 	"time"
 )
 
@@ -38,7 +39,7 @@ var _ sarah.Input = (*MessageInput)(nil)
 // Returned value is equivalent to the JID specified in "from" attribute.
 // https://tools.ietf.org/html/rfc3920#section-9.1.2
 func (message *MessageInput) SenderKey() string {
-	return fmt.Sprintf("%s", message.Event.Remote)
+	return fmt.Sprintf("%s", trimResource(message.Event.Remote))
 }
 
 // Message returns message content.
@@ -59,4 +60,8 @@ func (message *MessageInput) SentAt() time.Time {
 // https://xmpp.org/extensions/xep-0045.html#terms
 func (message *MessageInput) ReplyTo() sarah.OutputDestination {
 	return message.Event.Remote
+}
+
+func trimResource(jid string) string {
+	return strings.Split(jid, "/")[0]
 }

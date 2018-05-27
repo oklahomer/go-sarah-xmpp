@@ -38,7 +38,7 @@ type StanzaHandler func(ctx context.Context, config *Config, stanza Stanza, enqu
 func defaultStanzaHandler(_ context.Context, config *Config, stanza Stanza, enqueueInput func(input sarah.Input) error) {
 	switch typedStanza := stanza.(type) {
 	case xmpp.Chat:
-		if parseNick(typedStanza.Remote) == parseNick(config.Jid) {
+		if trimResource(typedStanza.Remote) == trimResource(config.Jid) {
 			// Skip message from this bot.
 			return
 		}
@@ -268,17 +268,6 @@ func (adapter *Adapter) superviseConnection(ctx context.Context, client stanzaSe
 
 		}
 	}
-}
-
-func parseNick(jid string) string {
-	s := strings.Split(jid, "@")
-	if len(s) > 0 {
-		s = strings.Split(s[1], "/")
-		if len(s) == 2 {
-			return s[1] // nick
-		}
-	}
-	return ""
 }
 
 // SendMessage let Bot send message to XMPP server
