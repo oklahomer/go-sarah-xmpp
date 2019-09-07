@@ -6,12 +6,12 @@ import (
 	"time"
 
 	"github.com/mattn/go-xmpp"
-	"github.com/oklahomer/go-sarah"
-	"github.com/oklahomer/go-sarah/log"
+	"github.com/oklahomer/go-sarah/v2"
+	"github.com/oklahomer/go-sarah/v2/log"
 
+	"context"
 	"fmt"
 	"github.com/oklahomer/go-sarah/retry"
-	"golang.org/x/net/context"
 )
 
 const (
@@ -54,11 +54,11 @@ func defaultStanzaHandler(_ context.Context, config *Config, stanza Stanza, enqu
 		trimmed := strings.TrimSpace(input.Message())
 		if config.HelpCommand != "" && trimmed == config.HelpCommand {
 			// Help command
-			help := sarah.NewHelpInput(input.SenderKey(), input.Message(), input.SentAt(), input.ReplyTo())
+			help := sarah.NewHelpInput(input)
 			enqueueInput(help)
 		} else if config.AbortCommand != "" && trimmed == config.AbortCommand {
 			// Abort command
-			abort := sarah.NewAbortInput(input.SenderKey(), input.Message(), input.SentAt(), input.ReplyTo())
+			abort := sarah.NewAbortInput(input)
 			enqueueInput(abort)
 		} else {
 			// Regular input

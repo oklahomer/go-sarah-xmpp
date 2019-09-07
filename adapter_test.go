@@ -1,10 +1,10 @@
 package xmpp
 
 import (
+	"context"
 	"errors"
 	"github.com/mattn/go-xmpp"
-	"github.com/oklahomer/go-sarah"
-	"golang.org/x/net/context"
+	"github.com/oklahomer/go-sarah/v2"
 	"testing"
 	"time"
 )
