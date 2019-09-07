@@ -1,10 +1,11 @@
 package xmpp
 
 import (
+	"context"
 	"errors"
 	"github.com/mattn/go-xmpp"
-	"github.com/oklahomer/go-sarah"
-	"golang.org/x/net/context"
+	"github.com/oklahomer/go-sarah/v2"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -166,4 +167,104 @@ func TestAdapter_superviseConnection(t *testing.T) {
 		t.Error("Context was canceled, but superviseConnection did not return.")
 
 	}
+}
+
+func TestRespWithNext(t *testing.T) {
+	fnc := func(_ context.Context, _ sarah.Input) (*sarah.CommandResponse, error) {
+		return nil, nil
+	}
+	opt := RespWithNext(fnc)
+
+	options := &respOptions{}
+	opt(options)
+
+	if options.userContext.Next == nil {
+		t.Fatal("Expected function is not set.")
+	}
+
+	if reflect.ValueOf(options.userContext.Next).Pointer() != reflect.ValueOf(fnc).Pointer() {
+		t.Error("Expected function is not set.")
+	}
+}
+
+func TestRespWithNextSerializable(t *testing.T) {
+	arg := &sarah.SerializableArgument{
+		FuncIdentifier: "foo",
+		Argument:       struct{}{},
+	}
+	opt := RespWithNextSerializable(arg)
+
+	options := &respOptions{}
+	opt(options)
+
+	if options.userContext.Serializable == nil {
+		t.Fatal("Expected argument is not set.")
+	}
+
+	if options.userContext.Serializable != arg {
+		t.Errorf("Expected argument is not set: %+v", options.userContext.Serializable)
+	}
+}
+
+type invalidInput struct {
+}
+
+func (i invalidInput) SenderKey() string {
+	return ""
+}
+
+func (i invalidInput) Message() string {
+	return ""
+}
+
+func (i invalidInput) SentAt() time.Time {
+	return time.Now()
+}
+
+func (i invalidInput) ReplyTo() sarah.OutputDestination {
+	return nil
+}
+
+var _ sarah.Input = (*invalidInput)(nil)
+
+func TestNewResponse(t *testing.T) {
+	t.Run("Invalid sarah.Input", func(t *testing.T) {
+		input := &invalidInput{}
+		_, err := NewResponse(input, "dummy")
+
+		if err == nil {
+			t.Error("Expected error is not returned.")
+		}
+	})
+
+	t.Run("Valid sarah.Input and options", func(t *testing.T) {
+		input := &MessageInput{
+			Event: &xmpp.Chat{
+				Remote: "replyTo",
+			},
+		}
+		message := "dummy"
+		arg := &sarah.SerializableArgument{
+			FuncIdentifier: "foo",
+			Argument:       struct{}{},
+		}
+
+		response, err := NewResponse(input, message, RespWithNextSerializable(arg))
+
+		if err != nil {
+			t.Fatalf("Unexpected error is returned: %s", err)
+		}
+
+		content, ok := response.Content.(xmpp.Chat)
+		if !ok {
+			t.Fatalf("Response content is not type of xmpp.Chat: %T", response.Content)
+		}
+		if content.Text != message {
+			t.Errorf("Expected message is not set: %s", content.Text)
+		}
+		if response.UserContext.Serializable != arg {
+			t.Errorf("Unexpected user context is set: %+v", response.UserContext.Serializable)
+
+		}
+	})
 }

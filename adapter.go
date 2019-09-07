@@ -2,16 +2,17 @@ package xmpp
 
 import (
 	"crypto/tls"
+	"golang.org/x/xerrors"
 	"strings"
 	"time"
 
 	"github.com/mattn/go-xmpp"
-	"github.com/oklahomer/go-sarah"
-	"github.com/oklahomer/go-sarah/log"
+	"github.com/oklahomer/go-sarah/v2"
+	"github.com/oklahomer/go-sarah/v2/log"
 
+	"context"
 	"fmt"
 	"github.com/oklahomer/go-sarah/retry"
-	"golang.org/x/net/context"
 )
 
 const (
@@ -54,11 +55,11 @@ func defaultStanzaHandler(_ context.Context, config *Config, stanza Stanza, enqu
 		trimmed := strings.TrimSpace(input.Message())
 		if config.HelpCommand != "" && trimmed == config.HelpCommand {
 			// Help command
-			help := sarah.NewHelpInput(input.SenderKey(), input.Message(), input.SentAt(), input.ReplyTo())
+			help := sarah.NewHelpInput(input)
 			enqueueInput(help)
 		} else if config.AbortCommand != "" && trimmed == config.AbortCommand {
 			// Abort command
-			abort := sarah.NewAbortInput(input.SenderKey(), input.Message(), input.SentAt(), input.ReplyTo())
+			abort := sarah.NewAbortInput(input)
 			enqueueInput(abort)
 		} else {
 			// Regular input
@@ -285,14 +286,23 @@ func (adapter *Adapter) SendMessage(ctx context.Context, output sarah.Output) {
 	}
 }
 
-// NewStringResponse creates new sarah.CommandResponse instance with given string.
-// This is a handy helper to setup outgoing xmpp.Chat value.
-// To have more customized value, developers are encouraged to construct xmpp.Chat directly.
-func NewStringResponse(input sarah.Input, message string) *sarah.CommandResponse {
-	xmppInput, _ := input.(*MessageInput)
+// NewResponse creates *sarah.CommandResponse with given arguments.
+// Simply pass a given sarah.Input instance and a text string to send a string message as a reply.
+// To send a more complicated reply message, pass as many options created by ResponseWith* function as required.
+func NewResponse(input sarah.Input, message string, options ...RespOption) (*sarah.CommandResponse, error) {
+	messageInput, ok := input.(*MessageInput)
+	if !ok {
+		return nil, xerrors.Errorf("%T is not currently supported to automatically generate response", input)
+	}
+
+	stash := &respOptions{}
+	for _, opt := range options {
+		opt(stash)
+	}
+
 	return &sarah.CommandResponse{
 		Content: xmpp.Chat{
-			Remote: xmppInput.ReplyTo().(string),
+			Remote: messageInput.ReplyTo().(string),
 			Text:   message,
 
 			// https://tools.ietf.org/html/rfc3921#section-2.1.1
@@ -301,39 +311,41 @@ func NewStringResponse(input sarah.Input, message string) *sarah.CommandResponse
 			// specialized applications (e.g., a multi-user chat service) MAY at
 			// their discretion enforce the use of a particular message type (e.g.,
 			// type='groupchat').
-			Type: xmppInput.Event.Type,
+			Type: messageInput.Event.Type,
 
 			// Inherit the given thread identifier by default to indicate that this response is part of the thread.
 			// Developer may ignore the value or use different thread identifier by constructing sarah.CommandResponse manually.
-			Thread: xmppInput.Event.Thread,
+			Thread: messageInput.Event.Thread,
 		},
+		UserContext: stash.userContext,
+	}, nil
+}
+
+// RespOption defines function signature that NewResponse's functional option must satisfy.
+type RespOption func(*respOptions)
+
+type respOptions struct {
+	userContext *sarah.UserContext
+}
+
+// RespWithNext sets given fnc as part of the response's *sarah.UserContext.
+// The next input from the same user will be passed to this fnc.
+// See sarah.UserContextStorage must be present or otherwise, fnc will be ignored.
+func RespWithNext(fnc sarah.ContextualFunc) RespOption {
+	return func(options *respOptions) {
+		options.userContext = &sarah.UserContext{
+			Next: fnc,
+		}
 	}
 }
 
-// NewStringResponseWithNext creates a new sarah.CommandResponse instance with given string and next function to continue.
-// With this method, user context is directly stored as an anonymous function
-// since XMPP Bot works with single connection and hence usually works with single process.
-//
-// To use external storage to store user context, use go-sarah-rediscontext or similar sarah.UserContextStorage implementation.
-func NewStringResponseWithNext(input sarah.Input, message string, next sarah.ContextualFunc) *sarah.CommandResponse {
-	xmppInput, _ := input.(*MessageInput)
-	return &sarah.CommandResponse{
-		Content: xmpp.Chat{
-			Remote: xmppInput.ReplyTo().(string),
-			Text:   message,
-
-			// https://tools.ietf.org/html/rfc3921#section-2.1.1
-			// Although the 'type' attribute is OPTIONAL, it is considered polite to
-			// mirror the type in any replies to a message; furthermore, some
-			// specialized applications (e.g., a multi-user chat service) MAY at
-			// their discretion enforce the use of a particular message type (e.g.,
-			// type='groupchat').
-			Type: xmppInput.Event.Type,
-
-			// Inherit the given thread identifier by default to indicate that this response is part of the thread.
-			// Developer may ignore the value or use different thread identifier by constructing sarah.CommandResponse manually.
-			Thread: xmppInput.Event.Thread,
-		},
-		UserContext: sarah.NewUserContext(next),
+// RespWithNextSerializable sets given arg as part of the response's *sarah.UserContext.
+// The next input from the same user will be passed to the function defined in the arg.
+// See sarah.UserContextStorage must be present or otherwise, arg will be ignored.
+func RespWithNextSerializable(arg *sarah.SerializableArgument) RespOption {
+	return func(options *respOptions) {
+		options.userContext = &sarah.UserContext{
+			Serializable: arg,
+		}
 	}
 }
